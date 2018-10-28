@@ -1,0 +1,119 @@
+---
+title: "Practical Machine Learning Assignment"
+output: word_document
+---
+
+###Background
+
+####Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively.
+####These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. 
+####One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+####In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. 
+####They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+####Data Preprocessing
+#####Loading data
+```{r echo=TRUE}
+library(caret)
+training_set <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+testing_set <- read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+```
+#####Partitioning the training dataset into training and testing datasets (due to small sample in testing set)
+```{r echo=TRUE}
+training_label <- createDataPartition(training_set$classe, p=0.6, list=FALSE)
+train <- training_set[training_label,]
+test <- training_set[-training_label,]
+```
+
+#####Data cleaning - Preprocessing to reduce the number of variables used for analysis.
+```{r echo=TRUE}
+#Remove variables with nearly zero variance
+NZV <- nearZeroVar(train)
+train <- train[,-NZV]
+test <- test[,-NZV]
+
+#Remove variables with a lot of NA terms
+label <- apply(train, 2, function(x) mean(is.na(x))) > 0.90
+train <- train[, -which(label, label == FALSE)]
+test <- test[, -which(label, label == FALSE)]
+
+#Remove other 5 variables used for identification
+train <- train[ , -(1:5)]
+test <- test[ , -(1:5)]
+```
+##### The number of variables have reduced from 160 to 54.
+
+#### Exploratory Data Analysis
+```{r echo=TRUE}
+#Correlation matrix between features
+library(corrplot)
+corrMat <- cor(train[,-54])
+corrplot(corrMat, method = "color", type = "lower", tl.cex = 0.8, tl.col = rgb(0,0,0))
+# Based on the plot, the darker gradient of color corresponds to having a higher correlation.
+
+#Correlation matrix between features and outcome
+featurePlot(train[,-54], train[,54], "strip")
+# Based on the plot, each feature has relatively the same distribution among the 5 outcomes.
+```
+####Prediction Model Selection - We would use 4 methods (Decision Tree, Random Forest, Generalised Boosting model and Extreme Boosting Model) on the training set and choose the model with the best accuracy to predict the outcome variable in the testing set.
+
+####Decision Tree
+```{r echo=TRUE}
+library(rpart)
+library(rpart.plot)
+library(rattle)
+set.seed(12345)
+modelDT <- rpart(classe ~ ., data = train, method = "class")
+fancyRpartPlot(modelDT)
+predictDT <- predict(modelDT, test, type = "class")
+
+# Performance of the model on the test data set
+confusionMatrix(predictDT, test$classe)
+```
+
+####Random Forest
+```{r echo=TRUE}
+library(randomForest)
+modelRF <- randomForest(classe ~ ., data = train, importance = TRUE)
+modelRF
+
+predictRF <- predict(modelRF, test, type = "class")
+
+# Performance of the model on the test data set
+confusionMatrix(predictRF, test$classe)
+```
+
+####Generalised Boosting Model
+```{r echo=TRUE}
+library(caret)
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1, verboseIter = FALSE)
+modelGBM <- train(classe ~ ., data = train, trControl = controlGBM, method = "gbm", verbose = FALSE)
+modelGBM$finalModel
+
+predictGBM <- predict(modelGBM, test)
+confusionMatrix(predictGBM, test$classe)
+```
+
+####Extreme Gradient Boosting - We have chosen this additional model due to its good accuracy and having a good reputation as a leading model in Kaggle competitions. 
+```{r echo=TRUE}
+library(xgboost)
+set.seed(12345)
+controlXGB <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+modelXGB <- train(classe ~ ., data = train, method = "xgbTree", trControl = controlXGB)
+modelXGB
+
+predictXGB <- predict(modelXGB, test)
+
+# Performance of the model on the test data set
+confusionMatrix(predictXGB, test$classe)
+```
+
+##### Conclusion: As Extreme Gradient Boosting has the highest accuracy of 0.9995, we will use Extreme Gradient Boosting Model to predict the test data class variable.
+
+####Predicting test data output
+```{r echo=TRUE}
+predictXGB_testingset <- predict(modelXGB, testing_set)
+predictXGB_testingset
+```
+
